@@ -107,6 +107,20 @@ hook-test name:
 hooks:
     @ls -1 {{project_root}}/.claude/hooks/*.py | xargs -I{} basename {} .py
 
+# ─── Beads (issue tracker) ───────────────────────────────
+
+# Pull beads issues from the Dolt remote
+bd-pull:
+    bd dolt pull
+
+# Push beads issues to the Dolt remote (env identity keeps the marker commit attributed to you)
+bd-push:
+    GIT_AUTHOR_NAME="$(git config user.name)" \
+    GIT_AUTHOR_EMAIL="$(git config user.email)" \
+    GIT_COMMITTER_NAME="$(git config user.name)" \
+    GIT_COMMITTER_EMAIL="$(git config user.email)" \
+    bd dolt push
+
 # ─── Open ────────────────────────────────────────────────
 
 # Open the client dashboard in browser
