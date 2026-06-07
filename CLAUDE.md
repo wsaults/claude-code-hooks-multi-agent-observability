@@ -62,3 +62,17 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 - Do not commit or push without clear authority from the active profile or the current user request.
 - If a required sync or push is blocked, stop and report the exact command and error.
 <!-- END BEADS INTEGRATION -->
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in **beads** (`bd`) — the local Dolt-backed tracker in `.beads/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical strings (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix), applied as beads labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
