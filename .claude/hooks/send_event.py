@@ -24,7 +24,8 @@ import argparse
 import urllib.request
 import urllib.error
 from datetime import datetime
-from utils.summarizer import generate_event_summary
+# model_extractor is stdlib-only (no anthropic/dotenv), so it is safe to import
+# at module load; this also keeps it monkeypatchable in tests.
 from utils.model_extractor import get_model_from_transcript
 
 def send_event_to_server(event_data, server_url='http://localhost:4000/events'):
@@ -55,39 +56,98 @@ def send_event_to_server(event_data, server_url='http://localhost:4000/events'):
         print(f"Unexpected error: {e}", file=sys.stderr)
         return False
 
-def main():
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Send Claude Code hook events to observability server')
-    parser.add_argument('--source-app', required=True, help='Source application name')
-    parser.add_argument('--event-type', required=True, help='Hook event type (PreToolUse, PostToolUse, etc.)')
-    parser.add_argument('--server-url', default='http://localhost:4000/events', help='Server URL')
-    parser.add_argument('--add-chat', action='store_true', help='Include chat transcript if available')
-    parser.add_argument('--summarize', action='store_true', help='Generate AI summary of the event')
-    
-    args = parser.parse_args()
-    
-    try:
-        # Read hook data from stdin
-        input_data = json.load(sys.stdin)
-    except json.JSONDecodeError as e:
-        print(f"Failed to parse JSON input: {e}", file=sys.stderr)
-        sys.exit(1)
-    
-    # Extract model name from transcript (with caching)
-    session_id = input_data.get('session_id', 'unknown')
+def model_provider(input_data, args, event_data):
+    """Provider: derive the model name for the Session from its transcript.
+
+    Fail-safe by contract of the seam (build_event_payload catches exceptions).
+    Always returns the 'model_name' key — '' when there is no transcript to read —
+    preserving the field the hook has always emitted.
+    """
     transcript_path = input_data.get('transcript_path', '')
+    session_id = input_data.get('session_id', 'unknown')
     model_name = ''
     if transcript_path:
         model_name = get_model_from_transcript(session_id, transcript_path)
+    return {'model_name': model_name}
 
-    # Prepare event data for server
+
+def chat_provider(input_data, args, event_data):
+    """Provider: optional full chat transcript, only when --add-chat is set.
+
+    Reads the Session's .jsonl transcript into a list under 'chat', skipping
+    malformed lines. Returns nothing when the flag is off or the transcript is
+    absent. Fail-safe by contract of the seam if the file becomes unreadable.
+    """
+    if not getattr(args, 'add_chat', False):
+        return {}
+    transcript_path = input_data.get('transcript_path')
+    if not transcript_path or not os.path.exists(transcript_path):
+        return {}
+
+    chat_data = []
+    with open(transcript_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    chat_data.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass  # Skip invalid lines
+    return {'chat': chat_data}
+
+
+def _summarize_event(event_data):
+    """Lazy indirection to the AI summarizer.
+
+    The summarizer pulls in anthropic/dotenv, so the import is deferred to call
+    time — keeping `import send_event` dependency-free (and the test suite
+    runnable without those packages). Tests substitute this function to simulate
+    summarizer success or failure.
+    """
+    from utils.summarizer import generate_event_summary
+    return generate_event_summary(event_data)
+
+
+def summary_provider(input_data, args, event_data):
+    """Provider: optional one-line AI summary, only when --summarize is set.
+
+    Fail-safe by contract of the seam: if the summarizer raises, the seam drops
+    the summary fragment and the event is still delivered. This closes the bug
+    where a summary failure could crash the hook and lose the event.
+    """
+    if not getattr(args, 'summarize', False):
+        return {}
+    summary = _summarize_event(event_data)
+    if summary:
+        return {'summary': summary}
+    return {}
+
+
+def build_event_payload(input_data, args, providers):
+    """Build the event payload sent to the observability server.
+
+    This is the provider seam: the core envelope and the event-type-specific
+    field flattening live here, while pluggable derivations (model, chat,
+    summary, and the future Worker identity) are supplied as `providers`.
+
+    Args:
+        input_data: The raw hook input read from stdin (the Session's payload).
+        args: Parsed CLI args (source_app, event_type, add_chat, summarize).
+        providers: An iterable of provider callables. Each is invoked as
+            provider(input_data, args, event_data) and returns a dict fragment
+            merged into the payload (or a falsy value to contribute nothing).
+
+    Returns:
+        The assembled event payload dict.
+    """
+    session_id = input_data.get('session_id', 'unknown')
+
     event_data = {
         'source_app': args.source_app,
         'session_id': session_id,
         'hook_event_type': args.event_type,
         'payload': input_data,
         'timestamp': int(datetime.now().timestamp() * 1000),
-        'model_name': model_name
     }
 
     # Forward event-specific fields as top-level properties for easier querying.
@@ -142,35 +202,53 @@ def main():
     # reason: SessionEnd
     if 'reason' in input_data:
         event_data['reason'] = input_data['reason']
+
+    # Pluggable derivations: each provider contributes a dict fragment that is
+    # merged onto the payload. A provider may return a falsy value to add nothing.
+    # Providers are fail-safe: an exception is logged and the provider's field is
+    # dropped, but it never propagates out of build_event_payload nor blocks the
+    # other providers or event delivery.
+    for provider in providers:
+        try:
+            fragment = provider(input_data, args, event_data)
+        except Exception as e:
+            provider_name = getattr(provider, '__name__', repr(provider))
+            print(f"Provider {provider_name} failed: {e}", file=sys.stderr)
+            continue
+        if fragment:
+            event_data.update(fragment)
+
+    return event_data
+
+
+def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Send Claude Code hook events to observability server')
+    parser.add_argument('--source-app', required=True, help='Source application name')
+    parser.add_argument('--event-type', required=True, help='Hook event type (PreToolUse, PostToolUse, etc.)')
+    parser.add_argument('--server-url', default='http://localhost:4000/events', help='Server URL')
+    parser.add_argument('--add-chat', action='store_true', help='Include chat transcript if available')
+    parser.add_argument('--summarize', action='store_true', help='Generate AI summary of the event')
     
-    # Handle --add-chat option
-    if args.add_chat and 'transcript_path' in input_data:
-        transcript_path = input_data['transcript_path']
-        if os.path.exists(transcript_path):
-            # Read .jsonl file and convert to JSON array
-            chat_data = []
-            try:
-                with open(transcript_path, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line:
-                            try:
-                                chat_data.append(json.loads(line))
-                            except json.JSONDecodeError:
-                                pass  # Skip invalid lines
-                
-                # Add chat to event data
-                event_data['chat'] = chat_data
-            except Exception as e:
-                print(f"Failed to read transcript: {e}", file=sys.stderr)
+    args = parser.parse_args()
     
-    # Generate summary if requested
-    if args.summarize:
-        summary = generate_event_summary(event_data)
-        if summary:
-            event_data['summary'] = summary
-        # Continue even if summary generation fails
+    try:
+        # Read hook data from stdin
+        input_data = json.load(sys.stdin)
+    except json.JSONDecodeError as e:
+        print(f"Failed to parse JSON input: {e}", file=sys.stderr)
+        sys.exit(1)
     
+    # Build the event payload via the provider seam. Each provider is fail-safe:
+    # the model name, optional chat transcript, and optional AI summary are
+    # derived behind build_event_payload, and a failure in any one of them drops
+    # only its own field rather than crashing the hook. This is also the seam the
+    # Worker identity provider (DASH-1) plugs into.
+    event_data = build_event_payload(
+        input_data, args,
+        providers=[model_provider, chat_provider, summary_provider],
+    )
+
     # Send to server
     success = send_event_to_server(event_data, args.server_url)
     
