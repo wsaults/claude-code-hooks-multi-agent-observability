@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "claude_code_hooks_multi_agent_observability",
+  "project_id": "cce80256-6ad4-4996-b6b2-dd64160d124d"
+}

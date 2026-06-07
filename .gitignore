@@ -271,3 +271,8 @@ ai_docs/haiku45/*
 trees/
 
 deep_docs
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads-credential-key
+.beads/proxieddb/
