@@ -1,10 +1,10 @@
 # Multi-Agent Observability System
 
-Real-time monitoring and visualization for Claude Code agents through comprehensive hook event tracking. Watch the [latest deep dive on multi-agent orchestration with Opus 4.6 here](https://youtu.be/RpUTF_U4kiw). With Claude Opus 4.6 and multi-agent orchestration, you can now spin up teams of specialized agents that work in parallel, and this observability system lets you trace every tool call, task handoff, and agent lifecycle event across the entire swarm.
+Real-time monitoring and visualization for Claude Code agents through comprehensive hook event tracking. When you run teams of specialized agents in parallel, this system lets you trace every tool call, task handoff, and lifecycle event across the entire swarm — and is evolving toward a **card-based board** where each unit of work shows up as a live, self-reporting card.
 
 ## 🎯 Overview
 
-This system provides complete observability into Claude Code agent behavior by capturing, storing, and visualizing Claude Code [Hook events](https://docs.anthropic.com/en/docs/claude-code/hooks) in real-time. It enables monitoring of multiple concurrent agents with session tracking, event filtering, and live updates. 
+This system provides complete observability into Claude Code agent behavior by capturing, storing, and visualizing Claude Code [Hook events](https://docs.anthropic.com/en/docs/claude-code/hooks) in real-time. It enables monitoring of multiple concurrent agents with session tracking, event filtering, and live updates.
 
 <img src="images/app.png" alt="Multi-Agent Observability Dashboard" style="max-width: 800px; width: 100%;">
 
@@ -16,24 +16,40 @@ Claude Agents → Hook Scripts → HTTP POST → Bun Server → SQLite → WebSo
 
 ![Agent Data Flow Animation](images/AgentDataFlowV2.gif)
 
+## 🧭 Core Concepts: Identity
+
+Three identifiers travel on **every** event and are easy to conflate. Getting them right is what keeps the dashboard from merging or duplicating cards. The full domain language lives in [`CONTEXT.md`](CONTEXT.md); the design rationale for the stable key is in [ADR 0001](docs/adr/0001-worker-identity-scheme.md).
+
+| Concept | Answers | Stability | Role |
+| ------- | ------- | --------- | ---- |
+| **Source App** | *Which application?* | Stable, coarse | Human-assigned label (`--source-app`); one Source App spans many Workers |
+| **Worker** / **Worker ID** | *Which unit of work?* | Stable across resumes | A unit of work in a single git worktree — **the card key** |
+| **Session** / `session_id` | *Which run?* | Ephemeral (changes on resume) | A single Claude Code run; many Sessions belong to one Worker |
+
+> When a field says "identify the agent", it almost always means the **Worker**, not the Session.
+
+- **Worker ID** is a random UUIDv4 persisted at `.claude/worker-id` and **git-ignored**, so it never travels between machines. Clone the repo to another machine and you get a *different* Worker — which is correct, it's a separate unit of work.
+- For display, the dashboard shows an agent as **`source_app:session_id`** with the session id truncated to the first 8 characters.
+
+The DASH roadmap (see [Issue Tracking & Roadmap](#-issue-tracking--roadmap)) tracks the migration from the current `source_app + session_id` keying toward stable Worker-keyed cards.
+
 ## 📋 Setup Requirements
 
 Before getting started, ensure you have the following installed:
 
-- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** - Anthropic's official CLI for Claude
-- **[Astral uv](https://docs.astral.sh/uv/)** - Fast Python package manager (required for hook scripts)
-- **[Bun](https://bun.sh/)**, **npm**, or **yarn** - For running the server and client
-- **[just](https://github.com/casey/just)** (optional) - Command runner for project recipes
-- **Anthropic API Key** - Set as `ANTHROPIC_API_KEY` environment variable
-- **OpenAI API Key** (optional) - For multi-model support with just-prompt MCP tool
-- **ElevenLabs API Key** (optional) - For audio features
-- **Firecrawl API Key** (optional) - For web scraping features
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — Anthropic's official CLI for Claude
+- **[Astral uv](https://docs.astral.sh/uv/)** — Fast Python package manager (required for hook scripts)
+- **[Bun](https://bun.sh/)**, **npm**, or **yarn** — For running the server and client
+- **[just](https://github.com/casey/just)** (recommended) — Command runner for project recipes
+- **[beads (`bd`)](https://github.com/steveyegge/beads)** (recommended) — Local issue tracker used for the project roadmap: `brew install beads`
+- **Anthropic API Key** — Set as `ANTHROPIC_API_KEY` environment variable
+- **OpenAI API Key** (optional) — For multi-model support
+- **ElevenLabs API Key** (optional) — For audio features
+- **Firecrawl API Key** (optional) — For web scraping features
 
 ### Configure .claude Directory
 
-To setup observability in your repo,we need to copy the .claude directory to your project root.
-
-To integrate the observability hooks into your projects:
+To set up observability in your repo, copy the `.claude` directory to your project root.
 
 1. **Copy the entire `.claude` directory to your project root:**
    ```bash
@@ -41,9 +57,9 @@ To integrate the observability hooks into your projects:
    ```
 
 2. **Update the `settings.json` configuration:**
-   
-   Open `.claude/settings.json` in your project and modify the `source-app` parameter to identify your project:
-   
+
+   Open `.claude/settings.json` in your project and modify the `--source-app` parameter to identify your project:
+
    ```json
    {
      "hooks": {
@@ -90,33 +106,34 @@ To integrate the observability hooks into your projects:
      }
    }
    ```
-   
+
    Replace `YOUR_PROJECT_NAME` with a unique identifier for your project (e.g., `my-api-server`, `react-app`, etc.).
 
 3. **Ensure the observability server is running:**
    ```bash
    # From the observability project directory (this codebase)
-   ./scripts/start-system.sh
+   just start          # or: ./scripts/start-system.sh
    ```
 
 Now your project will send events to the observability system whenever Claude Code performs actions.
 
 ## 🚀 Quick Start
 
-You can quickly view how this works by running this repository's `.claude` setup.
-
 ```bash
-# 1. Start both server and client
+# 1. Install dependencies (server + client)
+just install
+
+# 2. Start both server and client
 just start          # or: ./scripts/start-system.sh
 
-# 2. Open http://localhost:5173 in your browser
+# 3. Open http://localhost:5173 in your browser
 
-# 3. Open Claude Code and run the following command:
+# 4. Open Claude Code and run any command — e.g.:
 Run git ls-files to understand the codebase.
 
-# 4. Watch events stream in the client
+# 5. Watch events stream into the client
 
-# 5. Copy the .claude folder to other projects you want to emit events from.
+# 6. Copy the .claude folder to other projects you want to emit events from
 cp -R .claude <directory of your codebase you want to emit events from>
 ```
 
@@ -126,12 +143,12 @@ A `justfile` provides convenient recipes for common operations:
 
 ```bash
 just              # List all available recipes
+just install      # Install all dependencies (server + client)
 just start        # Start server + client
 just stop         # Stop all processes
 just restart      # Stop then start
 just server       # Start server only (dev mode)
 just client       # Start client only
-just install      # Install all dependencies
 just health       # Check server/client status
 just test-event   # Send a test event
 just db-reset     # Reset the database
@@ -205,6 +222,15 @@ claude-code-hooks-multi-agent-observability/
 │   │
 │   └── settings.json      # Hook configuration (all 12 events)
 │
+├── .beads/                 # Beads issue tracker (local Dolt-backed DB + JSONL export)
+│
+├── docs/                   # Project documentation
+│   ├── adr/               # Architecture Decision Records
+│   │   └── 0001-worker-identity-scheme.md
+│   └── agents/            # Agent-facing guides (issue tracker, triage labels, domain)
+│
+├── CONTEXT.md              # Domain language (Worker / Session / Worker ID / Source App)
+│
 ├── justfile               # Task runner recipes (just start, just stop, etc.)
 │
 ├── scripts/               # Utility scripts
@@ -218,8 +244,6 @@ claude-code-hooks-multi-agent-observability/
 ## 🔧 Component Details
 
 ### 1. Hook System (`.claude/hooks/`)
-
-> If you want to master claude code hooks watch [this video](https://github.com/disler/claude-code-hooks-mastery)
 
 The hook system intercepts Claude Code lifecycle events:
 
@@ -320,13 +344,42 @@ Vue 3 application with real-time visualization:
 | SessionStart       | 🚀     | Session started        | Session-based | Source, model & agent type           |
 | SessionEnd         | 🏁     | Session ended          | Session-based | End reason (clear/logout/exit/other) |
 
-### UserPromptSubmit Event (v1.0.54+)
+### UserPromptSubmit Event
 
 The `UserPromptSubmit` hook captures every user prompt before Claude processes it. In the UI:
 - Displays as `Prompt: "user's message"` in italic text
 - Shows the actual prompt content inline (truncated to 100 chars)
 - Summary appears on the right side when AI summarization is enabled
 - Useful for tracking user intentions and conversation flow
+
+## 📌 Issue Tracking & Roadmap
+
+This project tracks work with **[beads (`bd`)](https://github.com/steveyegge/beads)** — an AI-native, CLI-first issue tracker that lives in the repo. Issues are stored in a local Dolt-backed database under `.beads/`, with `.beads/issues.jsonl` as the git-tracked export that syncs the roadmap across clones.
+
+```bash
+brew install beads      # one-time install (pulls in dolt)
+
+bd ready                # find available work (no active blockers)
+bd list                 # all open issues
+bd show <id>            # view a single issue
+bd update <id> --claim  # claim work
+bd close <id>           # complete work
+```
+
+> Agent-facing guides live in [`docs/agents/`](docs/agents/): [`issue-tracker.md`](docs/agents/issue-tracker.md), [`triage-labels.md`](docs/agents/triage-labels.md), and [`domain.md`](docs/agents/domain.md).
+
+### The DASH Roadmap
+
+The roadmap moves the dashboard from a flat event timeline toward a **board of self-reporting Worker cards**. Highlights:
+
+- **Worker identity** — a stable, git-ignored Worker ID in the hooks layer (see [ADR 0001](docs/adr/0001-worker-identity-scheme.md)) so cards survive resumes
+- **Server schema** — a `workers` table and lifecycle status derived from the event stream
+- **Board view** — a card-per-Worker homepage with derived `deriveStatus(event, prev)` lifecycle
+- **Per-machine agent** — event forwarding with an offline queue; agents dial out over Tailscale
+- **Semantic status self-report** (`status.json`) and **tmux control layer** (opt-in per worker)
+- **Enrichment** — Linear + GitHub context on cards
+
+Run `bd ready` to see what's currently actionable.
 
 ## 🔌 Integration
 
@@ -439,9 +492,7 @@ Execute a plan with:
 
 ## 🔭 Multi-Agent Orchestration & Observability
 
-[![Multi-Agent Orchestration with Claude Code](images/claude-code-multi-agent-orchestration.png)](https://youtu.be/RpUTF_U4kiw)
-
-The true constraint of agentic engineering is no longer what the models can do — it's our ability to prompt engineer and context engineer the outcomes we need, and build them into reusable systems. Multi-agent orchestration changes the game by letting you spin up teams of specialized agents that each focus on one task extraordinarily well, work in parallel, and shut down when done. See the official [Claude Code Agent Teams documentation](https://code.claude.com/docs/en/agent-teams) for the full reference.
+The true constraint of agentic engineering is no longer what the models can do — it's our ability to prompt-engineer and context-engineer the outcomes we need, and build them into reusable systems. Multi-agent orchestration lets you spin up teams of specialized agents that each focus on one task extraordinarily well, work in parallel, and shut down when done. See the official [Claude Code Agent Teams documentation](https://code.claude.com/docs/en/agent-teams) for the full reference.
 
 ### The Orchestration Workflow
 
@@ -456,7 +507,7 @@ The full multi-agent orchestration lifecycle follows this pattern:
 
 ### Why Observability Matters
 
-When you have multiple agents running in parallel — each with their own context window, session ID, and task assignments — you need visibility into what's happening across the swarm. Without observability, you're vibe coding at scale. With it, you can:
+When you have multiple agents running in parallel — each with their own context window, session ID, and task assignments — you need visibility into what's happening across the swarm. Without observability, you're flying blind. With it, you can:
 
 - **Trace every tool call** across all agents in real-time via the dashboard
 - **Filter by agent swim lane** to inspect individual agent behavior
@@ -464,7 +515,7 @@ When you have multiple agents running in parallel — each with their own contex
 - **Spot failures early** — PostToolUseFailure and PermissionRequest events surface issues before they cascade
 - **Measure throughput** — the live pulse chart shows activity density across your agent fleet
 
-This is what separates engineers from vibe coders: understanding what's happening underneath the hood so you can scale compute to scale impact with confidence.
+Understanding what's happening underneath the hood is what lets you scale compute to scale impact with confidence.
 
 ## 🛡️ Security Features
 
@@ -479,12 +530,5 @@ This is what separates engineers from vibe coders: understanding what's happenin
 - **Server**: Bun, TypeScript, SQLite
 - **Client**: Vue 3, TypeScript, Vite, Tailwind CSS
 - **Hooks**: Python 3.11+, Astral uv, TTS (ElevenLabs or OpenAI), LLMs (Claude or OpenAI)
+- **Issue tracking**: beads (`bd`) on a local Dolt database
 - **Communication**: HTTP REST, WebSocket
-
-## Master AI **Agentic Coding**
-> And prepare for the future of software engineering
-
-Learn tactical agentic coding patterns with [Tactical Agentic Coding](https://agenticengineer.com/tactical-agentic-coding?y=opsorch)
-
-Follow the [IndyDevDan YouTube channel](https://www.youtube.com/@indydevdan) to improve your agentic coding advantage.
-
