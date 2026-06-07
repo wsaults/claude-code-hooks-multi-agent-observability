@@ -28,6 +28,7 @@ Run `bd show <id>` (add `--json` to parse). The user will normally pass the issu
 This fork is worked on from more than one machine, so the beads Dolt DB must be kept in sync:
 
 - **New machine:** run `bd bootstrap` (clones the remote Dolt and wires it up). **Never `bd init` on a second machine** — independent inits create divergent Dolt roots that cannot merge.
-- **Before working:** `bd dolt pull` (or `just bd-pull`) to receive other machines' changes. The `SessionStart` hook runs this automatically (fail-safe).
-- **After beads changes:** push the Dolt DB **explicitly** with `bd dolt push` (or `just bd-push`). Do NOT rely on `git push` — the `pre-push` git hook has been observed to leave `refs/dolt/data` stale, so the issue DB silently diverges from the git `issues.jsonl` mirror unless you push Dolt yourself.
+- **Always sync via the `just` recipes — never raw `bd dolt push` / `bd dolt pull`.** `just bd-push` wraps the push with `GIT_AUTHOR_*`/`GIT_COMMITTER_*` from your git config so the Dolt marker commit stays attributed to you; raw `bd dolt push` can let it fall back to a default identity.
+- **Before working:** `just bd-pull` to receive other machines' changes. The `SessionStart` hook runs this automatically (fail-safe).
+- **After beads changes:** `just bd-push` to sync the Dolt DB. Do NOT rely on `git push` — the `pre-push` git hook has been observed to leave `refs/dolt/data` stale, so the issue DB silently diverges from the git `issues.jsonl` mirror unless you push via `just bd-push`.
 - **Conflicts in `.beads/issues.jsonl`** during a merge/rebase: take `--theirs` and let `bd export` / `bd close` regenerate it — the Dolt DB is the source of truth; the JSONL is just a reviewable mirror.

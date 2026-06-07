@@ -69,7 +69,7 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 Issues are tracked in **beads** (`bd`) — the local Dolt-backed tracker in `.beads/`. See `docs/agents/issue-tracker.md`.
 
-**Cross-machine:** `bd bootstrap` (never `bd init`) on a new machine; `bd dolt pull` before work (auto via the SessionStart hook) and **explicit** `bd dolt push` / `just bd-push` after beads changes — the `pre-push` hook does not reliably sync Dolt.
+**Cross-machine:** `bd bootstrap` (never `bd init`) on a new machine. Sync the issue DB **only via the `just` recipes — `just bd-pull` before work (auto via the SessionStart hook) and `just bd-push` after beads changes; never raw `bd dolt push`/`pull`** (the recipe attributes the Dolt marker commit to you, and the `pre-push` hook doesn't reliably sync). See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

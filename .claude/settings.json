@@ -121,7 +121,7 @@
       {
         "hooks": [
           {
-            "command": "bd dolt pull >/dev/null 2>&1 || true",
+            "command": "just bd-pull >/dev/null 2>&1 || true",
             "type": "command"
           },
           {
