@@ -276,3 +276,6 @@ deep_docs
 .dolt/
 .beads-credential-key
 .beads/proxieddb/
+
+# Dispatch worker scaffolding (local task tracking, not project code)
+.dispatch/

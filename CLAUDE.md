@@ -69,6 +69,8 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 Issues are tracked in **beads** (`bd`) — the local Dolt-backed tracker in `.beads/`. See `docs/agents/issue-tracker.md`.
 
+**Cross-machine:** `bd bootstrap` (never `bd init`) on a new machine; `bd dolt pull` before work (auto via the SessionStart hook) and **explicit** `bd dolt push` / `just bd-push` after beads changes — the `pre-push` hook does not reliably sync Dolt.
+
 ### Triage labels
 
 Default canonical strings (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix), applied as beads labels. See `docs/agents/triage-labels.md`.

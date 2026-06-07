@@ -22,3 +22,12 @@ Create beads issues with `bd create`. For a PRD broken into implementation slice
 ## When a skill says "fetch the relevant ticket"
 
 Run `bd show <id>` (add `--json` to parse). The user will normally pass the issue ID (e.g. `dash-xzl`) directly.
+
+## Cross-machine sync
+
+This fork is worked on from more than one machine, so the beads Dolt DB must be kept in sync:
+
+- **New machine:** run `bd bootstrap` (clones the remote Dolt and wires it up). **Never `bd init` on a second machine** — independent inits create divergent Dolt roots that cannot merge.
+- **Before working:** `bd dolt pull` (or `just bd-pull`) to receive other machines' changes. The `SessionStart` hook runs this automatically (fail-safe).
+- **After beads changes:** push the Dolt DB **explicitly** with `bd dolt push` (or `just bd-push`). Do NOT rely on `git push` — the `pre-push` git hook has been observed to leave `refs/dolt/data` stale, so the issue DB silently diverges from the git `issues.jsonl` mirror unless you push Dolt yourself.
+- **Conflicts in `.beads/issues.jsonl`** during a merge/rebase: take `--theirs` and let `bd export` / `bd close` regenerate it — the Dolt DB is the source of truth; the JSONL is just a reviewable mirror.

@@ -121,6 +121,10 @@
       {
         "hooks": [
           {
+            "command": "bd dolt pull >/dev/null 2>&1 || true",
+            "type": "command"
+          },
+          {
             "command": "bd prime --hook-json",
             "type": "command"
           }
